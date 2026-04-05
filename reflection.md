@@ -1,16 +1,37 @@
 # PawPal+ Project Reflection
 
 ## 1. System Design
+User can able to add pet
+User can able to add tasks
+User can able to see schedule of today
+User can able to edit pet
+User can able to edit tasks
+User can able to delete pet
+User can able to delete tasks
 
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+  - The initial UML design includes four classes: `Owner`, `Pet`, `Task`, and `Schedule`. An `Owner` holds a daily time budget and a list of pets. Each `Pet` holds a list of care `Task` objects. The `Schedule` class takes an owner and a pet, selects tasks that fit within the owner's time budget (sorted by priority), and stores both the chosen tasks and the ones that were skipped.
+
 - What classes did you include, and what responsibilities did you assign to each?
+  - **Owner** — stores owner info and daily available time; manages a list of pets.
+  - **Pet** — stores pet info and manages a list of care tasks.
+  - **Task** — represents a single care activity with a title, duration, priority, and category.
+  - **Schedule** — acts as the planner; reads the owner's time budget, selects and orders tasks by priority, and explains why tasks were included or skipped.
 
 **b. Design changes**
 
 - Did your design change during implementation?
+    - Yes
 - If yes, describe at least one change and why you made it.
+    - **Added unique IDs to every object.** The initial design had no `id` field on any class. Without IDs, removing or looking up a specific pet or task by name would cause conflicts when two objects share the same name (e.g. two pets named "Max"). Adding a UUID to each class solved this cleanly.
+    - **Added get-by-ID methods to every class.** Once we had IDs, we needed a way to retrieve a specific entry without scanning everything manually. Each class now has a `get_pet(pet_id)`, `get_task(task_id)`, etc. method so lookups are consistent and encapsulated.
+    - **Added foreign key reference IDs.** `Pet` stores `pet_id`, `Task` stores `pet_id`, and `Schedule` stores `pet_id`. This lets each object know which parent it belongs to without holding a full object reference, making serialization and lookups simpler.
+    - **Moved task creation to Owner, not Pet.** Originally the design had task management methods on `Pet`. But since tasks must be created with the correct `pet_id` set, it made more sense for `Owner` to be the factory — it knows which pets it has, so it can set the FK correctly and then delegate storage to `Pet.add_task()`.
+    - **Extracted a Scheduler class (SOLID — SRP + OCP).** The original `Schedule` class was responsible for both storing the result and running the scheduling algorithm. This violates the Single Responsibility Principle. We extracted a separate `Scheduler` class whose only job is to run the algorithm and return a `Schedule`. This also makes it easy to swap in a different scheduling strategy later without touching `Schedule` at all.
+    - **Schedule became a pure result container.** After extracting `Scheduler`, `Schedule` no longer has `generate()` or `available_tasks` as inputs. It only stores the output (scheduled tasks, skipped tasks, total duration) and provides `explain()` and `to_dict()`. This makes it clean and focused.
+
 
 ---
 
