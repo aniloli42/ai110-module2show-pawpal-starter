@@ -12,7 +12,13 @@ User can able to delete tasks
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+  - The initial UML design includes four classes: `Owner`, `Pet`, `Task`, and `Schedule`. An `Owner` holds a daily time budget and a list of pets. Each `Pet` holds a list of care `Task` objects. The `Schedule` class takes an owner and a pet, selects tasks that fit within the owner's time budget (sorted by priority), and stores both the chosen tasks and the ones that were skipped.
+
 - What classes did you include, and what responsibilities did you assign to each?
+  - **Owner** — stores owner info and daily available time; manages a list of pets.
+  - **Pet** — stores pet info and manages a list of care tasks.
+  - **Task** — represents a single care activity with a title, duration, priority, and category.
+  - **Schedule** — acts as the planner; reads the owner's time budget, selects and orders tasks by priority, and explains why tasks were included or skipped.
 
 **b. Design changes**
 
