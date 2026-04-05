@@ -1,6 +1,13 @@
 # PawPal+ Project Reflection
 
 ## 1. System Design
+User can able to add pet
+User can able to add tasks
+User can able to see schedule of today
+User can able to edit pet
+User can able to edit tasks
+User can able to delete pet
+User can able to delete tasks
 
 **a. Initial design**
 
