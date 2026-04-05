@@ -358,7 +358,14 @@ class Scheduler:
     @staticmethod
     def detect_time_conflicts(tasks: list[Task]) -> list[str]:
         """A lightweight conflict detection strategy that returns warning messages
-        if two or more tasks are scheduled at the exact same 'time'."""
+        if two or more tasks are scheduled at the exact same time.
+
+        Args:
+            tasks: A list of Task objects to verify.
+
+        Returns:
+            A list of formatted warning strings describing detected time overlap conflicts.
+        """
         warnings = []
         time_map: dict[str, list[str]] = {}
         for task in tasks:
@@ -373,7 +380,14 @@ class Scheduler:
 
     @staticmethod
     def sort_by_time(tasks: list[Task]) -> list[Task]:
-        """Sorts tasks by their time attribute in 'HH:MM' format."""
+        """Sorts tasks by their time attribute in strict chronological 'HH:MM' format.
+
+        Args:
+            tasks: The list of tasks to sort.
+
+        Returns:
+            A new list of Task objects ordered by their string time attribute via lambda.
+        """
         # Python's sorted() uses lexical sorting for strings. 
         # A lambda function is passed as a "key" to sort by the HH:MM time property.
         return sorted(tasks, key=lambda t: t.time)
@@ -552,7 +566,15 @@ class Owner:
         return None
 
     def filter_tasks_by_pet_or_status(self, pet_name: Optional[str] = None, status: Optional[str] = None) -> list[Task]:
-        """Filters tasks by completion status or pet name."""
+        """Filters tasks by completion status or pet name.
+
+        Args:
+            pet_name: Optional name string to restrict returned tasks to a specific pet.
+            status: Optional status string (e.g., 'pending', 'completed') to filter by.
+
+        Returns:
+            A list of Task objects matching the provided constraints.
+        """
         filtered_tasks = []
         for pet in self.pets:
             if pet_name is not None and pet.name != pet_name:
@@ -564,7 +586,14 @@ class Owner:
         return filtered_tasks
 
     def complete_task(self, task_id: str, on_date: Optional[str] = None) -> None:
-        """Marks a task as completed and automatically generates the next occurrence."""
+        """Marks a task as completed and automatically generates the next occurrence.
+
+        Args:
+            task_id: The UUID of the task to be marked completed.
+            on_date: An optional string representing the completion date (YYYY-MM-DD). 
+                     Defaults to today. For recurring tasks, this date is used to calculate 
+                     the next occurrence via timedelta.
+        """
         task = self.get_task(task_id)
         if not task: return
         
