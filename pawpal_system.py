@@ -35,6 +35,7 @@ class Task:
 
     VALID_PRIORITIES: ClassVar[set] = {"low", "medium", "high"}
     VALID_CATEGORIES: ClassVar[set] = {"walk", "feeding", "meds", "grooming", "enrichment", "other"}
+    VALID_STATUSES:   ClassVar[set] = {"pending", "in_progress", "completed"}
 
     pet_id: str
     title: str
@@ -42,11 +43,27 @@ class Task:
     priority: str = "medium"
     category: str = "other"
     notes: str = ""
+    status: str = "pending"
     id: str = field(default_factory=lambda: str(uuid.uuid4()), init=False)
 
     def is_high_priority(self) -> bool:
         """Returns True if the task priority is 'high'."""
         return self.priority == "high"
+
+    def set_status(self, status: str) -> None:
+        """Updates the task status.
+
+        Args:
+            status: one of 'pending', 'in_progress', or 'completed'.
+
+        Raises:
+            ValueError: if the status is not a valid value.
+        """
+        if status not in self.VALID_STATUSES:
+            raise ValueError(
+                f"Invalid status '{status}'. Must be one of: {self.VALID_STATUSES}"
+            )
+        self.status = status
 
     def to_dict(self) -> dict:
         """Serializes the task to a plain dictionary."""
@@ -58,6 +75,7 @@ class Task:
             "priority": self.priority,
             "category": self.category,
             "notes": self.notes,
+            "status": self.status,
         }
 
 
