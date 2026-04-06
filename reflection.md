@@ -1,37 +1,39 @@
 # PawPal+ Project Reflection
 
 ## 1. System Design
-User can able to add pet
-User can able to add tasks
-User can able to see schedule of today
-User can able to edit pet
-User can able to edit tasks
-User can able to delete pet
-User can able to delete tasks
+
+**Overview of user-facing capabilities:**
+- Add, edit, and remove pets
+- Create, update, and delete tasks per pet with priority, category, recurrence, and time slot preferences
+- Generate a smart daily schedule with time-slot assignments
+- View conflict warnings and skipped tasks in a structured table
+- Mark tasks complete; recurring tasks auto-spawn the next occurrence
+
+---
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-  - The initial UML design includes four classes: `Owner`, `Pet`, `Task`, and `Schedule`. An `Owner` holds a daily time budget and a list of pets. Each `Pet` holds a list of care `Task` objects. The `Schedule` class takes an owner and a pet, selects tasks that fit within the owner's time budget (sorted by priority), and stores both the chosen tasks and the ones that were skipped.
+- **Briefly describe your initial UML design.**
+  The initial UML design included four classes: `Owner`, `Pet`, `Task`, and `Schedule`. An `Owner` held a daily time budget and a list of pets. Each `Pet` held a list of care `Task` objects. `Schedule` took an owner and pet, selected tasks within the time budget sorted by priority, and stored both chosen and skipped tasks.
 
-- What classes did you include, and what responsibilities did you assign to each?
-  - **Owner** — stores owner info and daily available time; manages a list of pets.
+- **What classes did you include, and what responsibilities did you assign to each?**
+  - **Owner** — stores owner info and daily available minutes; manages a list of pets.
   - **Pet** — stores pet info and manages a list of care tasks.
-  - **Task** — represents a single care activity with a title, duration, priority, and category.
-  - **Schedule** — acts as the planner; reads the owner's time budget, selects and orders tasks by priority, and explains why tasks were included or skipped.
+  - **Task** — represents a single care activity with title, duration, priority, and category.
+  - **Schedule** — acted as both the planner and the result container; explained why tasks were included or skipped.
+
+---
 
 **b. Design changes**
 
-- Did your design change during implementation?
-    - Yes
-- If yes, describe at least one change and why you made it.
-    - **Added unique IDs to every object.** The initial design had no `id` field on any class. Without IDs, removing or looking up a specific pet or task by name would cause conflicts when two objects share the same name (e.g. two pets named "Max"). Adding a UUID to each class solved this cleanly.
-    - **Added get-by-ID methods to every class.** Once we had IDs, we needed a way to retrieve a specific entry without scanning everything manually. Each class now has a `get_pet(pet_id)`, `get_task(task_id)`, etc. method so lookups are consistent and encapsulated.
-    - **Added foreign key reference IDs.** `Pet` stores `pet_id`, `Task` stores `pet_id`, and `Schedule` stores `pet_id`. This lets each object know which parent it belongs to without holding a full object reference, making serialization and lookups simpler.
-    - **Moved task creation to Owner, not Pet.** Originally the design had task management methods on `Pet`. But since tasks must be created with the correct `pet_id` set, it made more sense for `Owner` to be the factory — it knows which pets it has, so it can set the FK correctly and then delegate storage to `Pet.add_task()`.
-    - **Extracted a Scheduler class (SOLID — SRP + OCP).** The original `Schedule` class was responsible for both storing the result and running the scheduling algorithm. This violates the Single Responsibility Principle. We extracted a separate `Scheduler` class whose only job is to run the algorithm and return a `Schedule`. This also makes it easy to swap in a different scheduling strategy later without touching `Schedule` at all.
-    - **Schedule became a pure result container.** After extracting `Scheduler`, `Schedule` no longer has `generate()` or `available_tasks` as inputs. It only stores the output (scheduled tasks, skipped tasks, total duration) and provides `explain()` and `to_dict()`. This makes it clean and focused.
+- **Did your design change during implementation?** Yes — significantly.
 
+- **Describe at least one change and why you made it:**
+  - **Added unique UUIDs to every object.** The initial design had no `id` field. Without IDs, removing or looking up a specific pet or task by name would fail when two objects share the same name. Adding a `uuid4()` to each class solved this cleanly and enabled get-by-ID methods everywhere.
+  - **Extracted a `Scheduler` class (SOLID — SRP + OCP).** The original `Schedule` class was responsible for both running the scheduling algorithm *and* storing the result, violating Single Responsibility. Extracting `Scheduler` gave it one job (run the greedy algorithm, return a `Schedule`), making it easy to swap in a different strategy later without touching `Schedule` or `Owner`.
+  - **Added `ScheduledSlot`.** The original diagram had no concept of a timed slot. `ScheduledSlot` pins each task to a `start_minute`/`end_minute` offset so the UI can display real `HH:MM–HH:MM` labels.
+  - **Added recurrence fields and `complete_task()` to `Owner`.** The initial design had no recurrence. Adding `recurrence`, `due_date`, and `preferred_time_slot` to `Task`, and then implementing `Owner.complete_task()` with `timedelta` logic, turned one-shot tasks into self-renewing chains.
+  - **Moved task creation to `Owner`, not `Pet`.** Since tasks need the correct `pet_id` set at creation, `Owner` is the right factory — it knows which pets it has, sets the FK, and delegates storage to `Pet.add_task()`.
 
 ---
 
@@ -39,15 +41,26 @@ User can able to delete tasks
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+- **What constraints does your scheduler consider?**
+  - **Time budget** — `available_minutes` is the hard limit; no task is scheduled if it doesn't fit in the remaining budget.
+  - **Priority** — tasks are ordered `high → medium → low` using a `PRIORITY_ORDER` dict before greedy fill begins.
+  - **Duration (tie-break)** — within the same priority level, shorter tasks are placed first. This maximises the number of tasks that fit (greedy knapsack heuristic).
+  - **Due date** — tasks with a future `due_date` are excluded via `Task.is_due(date)`.
+  - **Status** — completed tasks are never re-scheduled.
+  - **Preferred time slot (soft)** — `morning`, `afternoon`, and `evening` slots each have a soft capacity (`SLOT_CAPACITY`). Exceeding capacity triggers a warning rather than blocking the task.
+
+- **How did you decide which constraints mattered most?**
+  Time budget and priority are the hardest constraints — without them the scheduler is useless. Due date and status are correctness constraints. Preferred time slot and duration tie-breaking are quality-of-life improvements added in later iterations. The decision to keep time-slot as a *soft* constraint (warning, not block) was intentional: pet care tasks often don't have rigid clock times and an owner should never miss a high-priority medication because of a soft preference conflict.
+
+---
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-  - The conflict detection strategy currently only checks for **exact time matches** (e.g., two tasks both independently tagged "14:00") instead of computing true overlapping duration intervals (e.g., a 60-minute task starting at "14:00" overlapping with another task at "14:30").
-- Why is that tradeoff reasonable for this scenario?
-  - It is reasonable for our lightweight minimum viable product (MVP): checking for exact string matches (`O(N)` dictionary grouping) is significantly simpler and faster than importing heavy timestamp libraries to evaluate continuous minute-by-minute range intersections. For everyday pet scheduling, most accidental double-bookings happen when a user accidentally assigns the exact same starting hour twice, prioritizing performance and code readability over stringent calendar rules.
+- **Describe one tradeoff your scheduler makes.**
+  The conflict detection strategy checks for **exact HH:MM matches** (two tasks both tagged `08:00`) rather than computing true overlapping duration intervals (a 60-minute task at `08:00` overlapping with a 30-minute task at `08:30`).
+
+- **Why is that tradeoff reasonable for this scenario?**
+  It is reasonable for an MVP pet scheduler. The `O(N)` dictionary-grouping approach is simple, fast, and catches the most common real-world mistake — accidentally assigning the same start time to two tasks. Full interval overlap detection would require parsing time strings into `datetime` objects and checking `start < other_end and end > other_start` for every pair — O(N²) in the naive case and significantly more code to maintain. For everyday pet care, exact-time collisions are far more likely than near-misses, so the simpler rule catches the most bugs with the least complexity.
 
 ---
 
@@ -55,13 +68,40 @@ User can able to delete tasks
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+- **Which VS Code Copilot features were most effective for building your scheduler?**
+
+  - **Inline completions** were the highest-value feature during implementation of `pawpal_system.py`. After writing the first method signature and docstring, Copilot would autocomplete the body consistently — especially for repetitive patterns like `get_by_id`, `remove_by_id`, and `to_dict()` serializers across `Owner`, `Pet`, and `Task`. This saved significant typing on boilerplate while keeping the actual design decisions in my hands.
+
+  - **Copilot Chat with `#codebase`** was essential during the testing phase. Prompting with *"What are the most important edge cases to test for a pet scheduler with sorting and recurring tasks?"* against the full codebase surfaced cases I had not considered — such as a task whose duration exactly equals the remaining budget, or a `weekdays` task completed on a Friday needing to skip two days to reach Monday. These became explicit test cases in `TestSchedulingEdgeCases` and `TestRecurrenceLogic`.
+
+  - **The Explain feature** (Ask mode) was used to verify test code before committing it. Before saving each new test class, I used it to confirm that `timedelta(days=1)` correctly models one-day advancement and that `weekday() >= 5` reliably identifies weekend days in Python's `date` API.
+
+- **What kinds of prompts were most helpful?**
+  Specific, scoped prompts beat broad ones every time. *"Write a static method on Scheduler that groups tasks by their `.time` attribute and returns a conflict warning for any group with more than one task"* produced clean, usable code. Vague prompts like *"add conflict detection"* produced over-engineered solutions with unnecessary dependencies.
+
+---
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+- **Describe one moment where you did not accept an AI suggestion as-is.**
+  When asked to implement recurrence, Copilot initially suggested storing the next occurrence as a separate `RecurringTask` subclass with its own `next_occurrence()` method. I rejected this because it added an inheritance hierarchy that violated the Open/Closed Principle in the wrong direction — it would have required `Scheduler.generate()` to know about the subclass to treat it differently. Instead, I kept `Task` as a flat dataclass and moved the recurrence-spawning logic into `Owner.complete_task()`, which already has the authority to call `create_task()`. This kept `Task` as a plain data model and `Owner` as the coordinator — a cleaner separation that matched our existing SOLID design.
+
+- **How did you evaluate the AI's suggestion?**
+  I checked it against the existing UML and asked: *"Does this require any other class to change?"* The subclass approach would have broken `Scheduler`, `Schedule`, and `Pet.add_task()` — three files for one feature. The flat-field approach required changes only to `Task` (two new fields) and `Owner` (one new method). That was the clearer choice.
+
+---
+
+**c. How did using separate chat sessions for different phases help?**
+
+  Using **separate Copilot Chat sessions per phase** — one for architecture, one for scheduling algorithm development, one for testing — prevented context drift. When a session accumulates many messages, the model starts mixing concerns: a question about test edge cases would pull in unrelated earlier context about UML design. Starting fresh for each phase meant every suggestion was grounded only in the relevant problem. It also made it easier to share clean sessions with teammates and replicate the AI interaction if something needed to be revisited.
+
+---
+
+**d. Being the "lead architect" with powerful AI tools**
+
+  The most important lesson from this project is that **AI tools are multiplicative, not autonomous**. Copilot could write correct, working code almost instantly — but "correct" and "well-designed" are not the same thing. Every time I let a suggestion run without checking it against the SOLID principles or the UML, something subtle broke: a class took on an extra responsibility, a method appeared in the wrong layer, or a shortcut quietly coupled two classes that should have been independent.
+
+  Being the lead architect meant treating AI suggestions as a **first draft from a fast but uncritical collaborator** — someone who can implement whatever you describe but has no memory of the design decisions you made twenty minutes ago. My job was to carry that design memory, evaluate every suggestion against it, and push back when a shortcut would create technical debt. The cleaner the constraints I gave the AI (specific method signatures, named SOLID principles, explicit class ownership), the better its output aligned with the design I had in mind.
 
 ---
 
@@ -69,13 +109,30 @@ User can able to delete tasks
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+- **What behaviors did you test?**
+  The 70-test suite covers five core areas:
+  1. **Task and Pet CRUD** — status transitions, unique ID generation, pet_id mismatch guards, defensive list copies.
+  2. **Scheduler happy paths** — priority ordering, all-tasks-fit, accurate total duration, `explain()` output.
+  3. **Scheduler edge cases** — zero-budget owner, empty pet, exact-fit task, 1-minute overflow, completed-task exclusion, future due-date exclusion, tie-break (shortest first).
+  4. **Recurrence logic** — daily (+1 day), weekly (+7 days), weekdays (Friday → Monday), non-recurring no-spawn, inherited recurrence value.
+  5. **Conflict detection** — same-time clash, three-way clash (one warning per slot), different times (no false positive), multi-slot conflicts, task names in warning message.
+
+- **Why were these tests important?**
+  Recurrence is the most fragile part of the system — a silent bug (wrong `timedelta`, weekend not skipped) would produce wrong dates that are hard to notice in the UI. The explicit date-pinned tests (`2026-04-10` is a Friday, next weekday `2026-04-13`) make regressions immediately visible. Edge cases like zero budget and exact-fit protect the greedy fill boundary condition, which is easy to get wrong with an off-by-one error.
+
+---
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+- **How confident are you that your scheduler works correctly?**
+  ⭐⭐⭐⭐⭐ — 5/5 for the core logic tested. All 70 tests pass in under 0.1 s. The greedy fill, recurrence spawning, conflict detection, and sort algorithms are each covered by multiple tests including edge cases.
+
+- **What edge cases would you test next if you had more time?**
+  - A pet with 50+ tasks to check scheduler performance at scale.
+  - Concurrent `complete_task()` calls for the same task (thread safety).
+  - An owner with `available_minutes = 0` and only low-priority tasks (no conflict should be generated).
+  - Timezone-aware date handling if the app were deployed for users in different timezones.
+  - Round-trip serialization: `task.to_dict()` → reconstruct a `Task` → `task.to_dict()` should be identical.
 
 ---
 
@@ -83,12 +140,14 @@ User can able to delete tasks
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The **SOLID architecture** was the best decision of the project. Extracting `Scheduler` into its own class made it trivial to add `sort_by_time()` and `detect_time_conflicts()` as static utility methods later without touching any other class. When the UI needed to call conflict detection live on every render (not just at schedule-generation time), `Scheduler.detect_time_conflicts()` was already a pure, stateless function that `app.py` could call with zero modification to the logic layer. That kind of change being easy is the reward for getting the design right upfront.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+- **True interval overlap detection** — replace the exact-time string match with proper `datetime` interval arithmetic so tasks like `08:00 + 45 min` and `08:30 + 30 min` are flagged as overlapping.
+- **Persistent storage** — session state resets on every page refresh. Adding a JSON or SQLite persistence layer would let owners return to their data across sessions.
+- **Smarter recurrence** — the current weekdays logic always finds the next calendar weekday. A richer model would let owners specify *which* weekdays (e.g., Mon/Wed/Fri for medication) using a bitmask or set of weekday integers.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The most valuable skill developed in this project was learning to **treat AI as a collaborator with no design memory, not an autonomous developer**. AI tools are exceptional at implementing a well-described pattern quickly. They cannot hold your architectural decisions in mind across a multi-day project or know which tradeoff you deliberately made three sessions ago. Writing detailed docstrings, keeping a live UML, and using structured chat sessions were not optional polish — they were the infrastructure that made AI collaboration produce good code instead of fast but inconsistent code. The lead architect's most important job is to be the memory and judgment that the AI doesn't have.
