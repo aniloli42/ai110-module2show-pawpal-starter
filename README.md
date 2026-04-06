@@ -82,7 +82,7 @@ The suite contains **70 tests** across 8 test classes:
 
 ### Confidence Level
 
-⭐⭐⭐⭐⭐ **4 / 5**
+⭐⭐⭐⭐ **4 / 5**
 
 All 70 tests pass against the current implementation with a run time of < 0.1 s.
 The suite covers happy paths, edge cases (empty pets, zero-budget schedules, single-task lists), and boundary conditions (exact-fit budget, Friday → Monday weekday skip), giving high confidence in the reliability of the core scheduling and recurrence logic.
